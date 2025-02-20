@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Engine Analyzer</title>
+    <style>
+        .chessboard {
+            width: 640px;
+            height: 640px;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            border: 10px solid #2e7d32; /* Green border matching your image */
+            background-image: url('path-to-wooden-background.jpg'); /* Replace with actual wooden texture image */
+            background-size: cover;
+        }
+
+        .square {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .light {
+            background-color: #d2b48c; /* Tan/light brown for light squares */
+        }
+
+        .dark {
+            background-color: #8b4513; /* Dark brown for dark squares */
+        }
+
+        .selected {
+            background-color: #ffff99 !important;
+            border: 2px solid #0000ff; /* Blue border for selected square */
+        }
+
+        .suggested {
+            background-color: #99ff99 !important;
+            border: 2px dashed #00ff00; /* Green dashed border for suggested move */
+        }
+
+        .analysis-panel {
+            width: 300px;
+            padding: 20px;
+            background-color: #f0f0f0;
+            margin-left: 20px;
+            border-radius: 5px;
+        }
+
+        .container {
+            display: flex;
+            margin: 20px;
+        }
+
+        #status, #suggestion {
+            margin-top: 10px;
+            font-family: Arial, sans-serif;
+        }
+
+        #color-select {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chessboard" id="chessboard"></div>
+        <div class="analysis-panel">
+            <h2>Engine Analysis</h2>
+            <select id="color-select">
+                <option value="white">Play as White</option>
+                <option value="black">Play as Black</option>
+            </select>
+            <div id="engine-output">Engine Thinking: Initializing...</div>
+            <div id="suggestion">AI Suggestion: None yet</div>
+            <div id="status">White to move</div>
+        </div>
+    </div>
+
+    <script>
+        // Define the initial board position (standard starting position from your image)
+        const initialBoard = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'], // Black pieces on rank 8
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'], // Black pawns on rank 7
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '], // Empty ranks 3-6
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'], // White pawns on rank 2
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']  // White pieces on rank 1
+        ];
+
+        // Piece image mappings using the GitHub repository for metal pieces
+        const pieceImages = {
+            'r': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/bR.png', // Black rook
+            'n': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/bN.png', // Black knight
+            'b': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/bB.png', // Black bishop
+            'q': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/bQ.png', // Black queen
+            'k': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/bK.png', // Black king
+            'p': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/bP.png', // Black pawn
+            'R': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/wR.png', // White rook
+            'N': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/wN.png', // White knight
+            'B': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/wB.png', // White bishop
+            'Q': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/wQ.png', // White queen
+            'K': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/wK.png', // White king
+            'P': 'https://raw.githubusercontent.com/GiorgioMegrelli/chess.com-boards-and-pieces/master/pieces/metal/wP.png'  // White pawn
+        };
+
+        let board = JSON.parse(JSON.stringify(initialBoard));
+        let selectedSquare = null;
+        let isWhiteTurn = true;
+        let playerColor = 'white';
+
+        function createBoard() {
+            const chessboard = document.getElementById('chessboard');
+            chessboard.innerHTML = '';
+            
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const square = document.createElement('div');
+                    square.className = `square ${(i + j) % 2 === 0 ? 'light' : 'dark'}`;
+                    square.dataset.row = i;
+                    square.dataset.col = j;
+
+                    if (board[i][j] !== ' ') {
+                        const img = document.createElement('img');
+                        img.src = pieceImages[board[i][j]];
+                        img.style.width = '60px'; // Adjust size as needed to match your image
+                        img.style.height = '60px';
+                        square.appendChild(img);
+                    }
+
+                    square.addEventListener('click', handleSquareClick);
+                    chessboard.appendChild(square);
+                }
+            }
+        }
+
+        function isMoveLegal(startRow, startCol, endRow, endCol) {
+            const piece = board[startRow][startCol];
+            const destination = board[endRow][endCol];
+            const dx = endCol - startCol;
+            const dy = endRow - startRow;
+
+            if (piece === ' ' || (startRow === endRow && startCol === endCol)) return false;
+
+            const isWhitePiece = piece.toUpperCase() === piece;
+            if ((isWhiteTurn && !isWhitePiece) || (!isWhiteTurn && isWhitePiece)) return false;
+            if (destination !== ' ' && ((isWhitePiece && destination.toUpperCase() === destination) || 
+                (!isWhitePiece && destination.toLowerCase() === destination))) return false;
+
+            switch (piece.toLowerCase()) {
+                case 'p':
+                    const direction = piece === 'P' ? -1 : 1;
+                    const startRowCheck = piece === 'P' ? 6 : 1;
+                    if (dx === 0 && dy === direction && destination === ' ') return true;
+                    if (dx === 0 && dy === 2 * direction && startRow === startRowCheck && 
+                        destination === ' ' && board[startRow + direction][startCol] === ' ') return true;
+                    if (Math.abs(dx) === 1 && dy === direction && destination !== ' ') return true;
+                    return false;
+
+                case 'r':
+                    if (dx === 0 || dy === 0) return isPathClear(startRow, startCol, endRow, endCol);
+                    return false;
+
+                case 'n':
+                    return (Math.abs(dx) === 2 && Math.abs(dy) === 1) || 
+                           (Math.abs(dx) === 1 && Math.abs(dy) === 2);
+
+                case 'b':
+                    if (Math.abs(dx) === Math.abs(dy)) return isPathClear(startRow, startCol, endRow, endCol);
+                    return false;
+
+                case 'q':
+                    if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) return isPathClear(startRow, startCol, endRow, endCol);
+                    return false;
+
+                case 'k':
+                    return Math.abs(dx) <= 1 && Math.abs(dy) <= 1;
+            }
+            return false;
+        }
+
+        function isPathClear(startRow, startCol, endRow, endCol) {
+            const dx = Math.sign(endCol - startCol);
+            const dy = Math.sign(endRow - startRow);
+            let x = startCol + dx;
+            let y = startRow + dy;
+
+            while (x !== endCol || y !== endRow) {
+                if (board[y][x] !== ' ') return false;
+                x += dx;
+                y += dy;
+            }
+            return true;
+        }
+
+        function handleSquareClick(e) {
+            const row = parseInt(e.target.dataset.row);
+            const col = parseInt(e.target.dataset.col);
+            const piece = board[row][col];
+
+            if (selectedSquare === null) {
+                if (piece !== ' ' && 
+                    ((isWhiteTurn && piece.toUpperCase() === piece) || 
+                     (!isWhiteTurn && piece.toLowerCase() === piece))) {
+                    selectedSquare = { row, col };
+                    e.target.classList.add('selected');
+                    if ((playerColor === 'white' && isWhiteTurn) || 
+                        (playerColor === 'black' && !isWhiteTurn)) {
+                        suggestMove(row, col);
+                    }
+                }
+            } else {
+                if (isMoveLegal(selectedSquare.row, selectedSquare.col, row, col)) {
+                    board[row][col] = board[selectedSquare.row][selectedSquare.col];
+                    board[selectedSquare.row][selectedSquare.col] = ' ';
+                    createBoard();
+                    isWhiteTurn = !isWhiteTurn;
+                    document.getElementById('status').textContent = `${isWhiteTurn ? 'White' : 'Black'} to move`;
+                    analyzeMove(selectedSquare.row, selectedSquare.col, row, col);
+                    if (playerColor !== (isWhiteTurn ? 'white' : 'black')) {
+                        setTimeout(aiMove, 1000);
+                    }
+                }
+                document.querySelector('.selected')?.classList.remove('selected');
+                document.querySelector('.suggested')?.classList.remove('suggested');
+                selectedSquare = null;
+            }
+        }
+
+        function suggestMove(startRow, startCol) {
+            for (let x = 0; x < 8; x++) {
+                for (let y = 0; y < 8; y++) {
+                    if (isMoveLegal(startRow, startCol, x, y)) {
+                        document.getElementById('suggestion').textContent = 
+                            `AI Suggestion: ${String.fromCharCode(97 + startCol)}${8 - startRow} to ${String.fromCharCode(97 + y)}${8 - x}`;
+                        const squares = document.querySelectorAll('.square');
+                        squares[x * 8 + y].classList.add('suggested');
+                        return;
+                    }
+                }
+            }
+            document.getElementById('suggestion').textContent = 'AI Suggestion: No legal moves';
+        }
+
+        function analyzeMove(startRow, startCol, endRow, endCol) {
+            const output = document.getElementById('engine-output');
+            output.textContent = `Engine Thinking: Analyzing move from ${String.fromCharCode(97 + startCol)}${8 - startRow} to ${String.fromCharCode(97 + endCol)}${8 - endRow}`;
+            
+            setTimeout(() => {
+                output.textContent = `Engine Analysis: Move completed - ${String.fromCharCode(97 + startCol)}${8 - startRow} to ${String.fromCharCode(97 + endCol)}${8 - endRow}`;
+            }, 1000);
+        }
+
+        function aiMove() {
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const piece = board[i][j];
+                    if (piece !== ' ' && 
+                        ((isWhiteTurn && piece.toUpperCase() === piece) || 
+                         (!isWhiteTurn && piece.toLowerCase() === piece))) {
+                        for (let x = 0; x < 8; x++) {
+                            for (let y = 0; y < 8; y++) {
+                                if (isMoveLegal(i, j, x, y)) {
+                                    board[x][y] = board[i][j];
+                                    board[i][j] = ' ';
+                                    createBoard();
+                                    isWhiteTurn = !isWhiteTurn;
+                                    document.getElementById('status').textContent = `${isWhiteTurn ? 'White' : 'Black'} to move`;
+                                    document.getElementById('engine-output').textContent = 
+                                        `Engine Analysis: AI moved from ${String.fromCharCode(97 + j)}${8 - i} to ${String.fromCharCode(97 + y)}${8 - x}`;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        document.getElementById('color-select').addEventListener('change', (e) => {
+            playerColor = e.target.value;
+            board = JSON.parse(JSON.stringify(initialBoard));
+            isWhiteTurn = true;
+            createBoard();
+            document.getElementById('status').textContent = 'White to move';
+            document.getElementById('suggestion').textContent = 'AI Suggestion: None yet';
+            if (playerColor === 'black') {
+                setTimeout(aiMove, 1000);
+            }
+        });
+
+        createBoard();
+    </script>
+</body>
+</html>
